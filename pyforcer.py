@@ -118,4 +118,4 @@ for i in range(num_threads):
 for thread in threads:
     thread.join()
 
-sys.exit(0
+sys.exit(0)
