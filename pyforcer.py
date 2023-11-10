@@ -89,7 +89,7 @@ def main():
     parser.add_argument("--port", type=int, default=22, help="Port number (default: 22)")
     parser.add_argument("--creds", help="Path to a file containing username and password combinations")
     parser.add_argument("--keyfile", help="Path to a private key file for authentication (optional)")
-    parser.add_argument("--threads", type=int, default=1, choices=range(1, 16), help="Number of threads (1-15)")
+    parser.add_argument("--threads", type=int, default=1, choices=range(1, 16), help="Number of threads to run concurrently (15 max)")
     print("PyForcer - SSH bruteforcing done properly.\n")
     # Parse the arguments
     args = parser.parse_args()
