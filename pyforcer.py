@@ -114,7 +114,7 @@ def main():
         if os.path.isfile(args.creds):
             credentials = read_credentials_file(args.creds)
         else:
-            print("Invalid data file: File does not exist.")
+            print("ERROR: specified credentials file does not exist.")
             return
     else:
         credentials = []
