@@ -33,14 +33,14 @@ def is_valid_ipv4(ip):
 
 def read_credentials_file(credentials_file):
     credentials = []
-    counter = 0  # Counter for tracking the number of combinations
+    counter = 0
     with open(credentials_file, "r") as file:
         for line in file:
             line = line.strip()
             if ":" in line:
                 username, password = line.split(":", 1)
                 credentials.append((username, password))
-                counter += 1  # Increment the counter for each combination
+                counter += 1  
     return credentials, counter
 
 def get_private_key(key_file):
@@ -96,19 +96,18 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
                         ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=timeout)
                         auth_method = "key"
                     except paramiko.AuthenticationException:
-                        pass  # Authentication with key failed
+                        pass
                 else:
                     safe_print(f"Invalid or unsupported private key type in {key_file}")
 
             if not auth_method:
                 try:
-                    ssh_client.connect(ip, port=port, username=username, password=password, timeout=timeout)
+                    ssh_client.connect(ip, port=port, username=username, password=password, timeout=timeout, pkey=None)
                     auth_method = "password"
                 except paramiko.AuthenticationException:
-                    pass  # Authentication with password failed
+                    pass
 
             if auth_method:
-                # Successful login, let's change the condition to determine success
                 success, response = check_success_condition(ssh_client, cmd)
                 credential_string = f"{username}:{password}" if auth_method == "password" else f"{username}:{key_file}"
                 if success:
@@ -119,17 +118,6 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
                 else:
                     result = f"[UNKNOWN] {auth_method.upper()} - {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
                     safe_print(result)
-
-            # if auth_method:
-            #     # Successful login, let's change the condition to determine success
-            #     success, response = check_success_condition(ssh_client, cmd)
-            #     result = f"[VALID] {auth_method.upper()} {ip}:{port} - {username}:{password} - [CMD:{cmd}] [RESPONSE:{response}]"
-            #     if success and result not in successful_logins:
-            #          safe_print(result)
-            #          successful_logins.add(result)
-            #          safe_write(output, result)
-            #     elif not success:
-            #          safe_print(result)
 
         except paramiko.AuthenticationException:
             if debug == True:
