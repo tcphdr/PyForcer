@@ -43,6 +43,26 @@ def read_credentials_file(credentials_file):
                 counter += 1  
     return credentials, counter
 
+# def get_private_key(key_file, password=None):
+#     try:
+#         private_key = paramiko.RSAKey(filename=key_file, password=password)
+#         return "RSA", private_key
+#     except paramiko.PasswordRequiredException:
+#         pass  # Password is required, but not provided
+#     except paramiko.SSHException:
+#         try:
+#             private_key = paramiko.DSSKey(filename=key_file, password=password)
+#             return "DSA", private_key
+#         except paramiko.PasswordRequiredException:
+#             pass  # Password is required, but not provided
+#         except paramiko.SSHException:
+#             try:
+#                 private_key = paramiko.ECDSAKey(filename=key_file, password=password)
+#                 return "ECDSA", private_key
+#             except paramiko.PasswordRequiredException:
+#                 pass  # Password is required, but not provided
+#     sys.exit(f"File \"{key_file}\" is an invalid private key type, exiting.")
+    
 def get_private_key(key_file):
     try:
         private_key = paramiko.RSAKey(filename=key_file)
@@ -57,6 +77,16 @@ def get_private_key(key_file):
                 return "ECDSA", private_key
             except paramiko.SSHException:
                 sys.exit(f"File \"{key_file}\" is an invalid private key type, exiting.")
+
+class CustomAutoAddPolicy(paramiko.AutoAddPolicy):
+    def __init__(self, idstring):
+        super(CustomAutoAddPolicy, self).__init__()
+        self._host_keys = {}
+        self.idstring = idstring
+
+    def missing_host_key(self, client, hostname, key):
+        client._host_keys.add(hostname, key.get_name(), key)
+        return
 
 def check_success_condition(ssh_client, cmd):
     try:
@@ -87,37 +117,40 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
     for username, password in credentials:
         try:
             ssh_client = paramiko.SSHClient()
-            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            #ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh_client.set_missing_host_key_policy(CustomAutoAddPolicy('SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u2'))
             auth_method = None
 
-            if key_file:
-                if private_key:
-                    try:
-                        ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=timeout)
-                        auth_method = "key"
-                    except paramiko.AuthenticationException:
+            if private_key:
+                try:
+                    ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=timeout)
+                    auth_method = "key"
+                except paramiko.AuthenticationException:
+                    if debug == True:
+                        safe_print(f"ERROR: unable to authenticate on {ip}:{port} as {username} using {key_file}")
+                    else:
                         pass
-                else:
-                    safe_print(f"Invalid or unsupported private key type in {key_file}")
+            else:
+                safe_print(f"{key_file} is not of a valid private key type.")
 
             if not auth_method:
                 try:
                     ssh_client.connect(ip, port=port, username=username, password=password, timeout=timeout, pkey=None)
                     auth_method = "password"
                 except paramiko.AuthenticationException:
-                    pass
+                    if debug == True:
+                        safe_print(f"ERROR: unable to authenticate on {ip}:{port} as {username} using password {password}")
+                    else:
+                        pass
 
             if auth_method:
                 success, response = check_success_condition(ssh_client, cmd)
                 credential_string = f"{username}:{password}" if auth_method == "password" else f"{username}:{key_file}"
-                if success:
-                    result = f"[VALID] {auth_method.upper()} {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
-                    safe_print(result)
-                    successful_logins.add(credential_string)
-                    safe_write(output, result)
-                else:
-                    result = f"[UNKNOWN] {auth_method.upper()} - {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
-                    safe_print(result)
+                result_type = "VALID" if success else "UNKNOWN"
+                result = f"[{result_type}] {auth_method.upper()} {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
+                successful_logins.add(credential_string)
+                safe_write(output, result)
+                safe_print(result)
 
         except paramiko.AuthenticationException:
             if debug == True:
@@ -146,6 +179,8 @@ def main():
         # Parse the arguments
         private_key_type, private_key = None, None
         args = parser.parse_args()
+        if args.debug:
+            paramiko.common.logging.basicConfig(level=paramiko.common.DEBUG)
         if args.input:
             if is_valid_ipv4(args.input):
                 ip_addresses = [args.input]
