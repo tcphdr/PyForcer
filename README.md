@@ -1,12 +1,17 @@
 # PyForcer
 
-PyForcer is a Python script that checks for SSH logins on specified IP addresses and writes the results to a file. It is compatible with both Python 2.7 and 3.0.
+SSH, or as some others may know it, OpenSSH, is a secure shell daemon that does exactly what the name suggests, it provides you a secure shell to your machine over the internet. While OpenSSH has demonstrated inherit flaws with it's underlying code in the past; What continues to remain the bane of existence for blue teaming? Brute forcing. I was pretty unsatisified with what I saw on GitHub for brute forcing, so I decided to tackle this project myself as if I were a red teamer. This is my creation:
+
+PyForcer is an secure shell (SSH) brute forcing tool that is focused on speed and validity. While some methods are rudimentry such as detecting the output of pre-selected commands that bare universal resemblence. At this time there is no way to distinguish from honeypots and real targets (soon tm). Please read further below on usage specifications and known issues. This repository is now public and might receive future updates, however it's not high on my priority list at this time. Please be responsible and enjoy.
+
+As always, if you find any bugs, feel free to submit an issue, pull requests are also welcome. 
 
 ## Dependencies
 
-- Python 2.7 or 3.0
+- Python 3.0
 - ipaddress module
 - paramiko module
+- argparse
 
 ## Usage
 
@@ -23,8 +28,14 @@ The arguments are as follows:
 - --port: <Port> - The port in which you wish to attempt SSH credential bruteforcing from
 - --keyfile: <Path to RSA/DSA/ECDSA keyfile> - Optional, specify a key file to use with the username combinations.
 - --cmd: Command to run after successful login (default: uname -a) 
-- --threads: - The amount of threads you wish to specify to run concurrently.
+- --threads: - The amount of threads you wish to specify to run concurrently. (
 - --debug: - Enable the script's various debugging features
+
+## Known Issues
+- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time.
+- Threading might be iffy but it does work.
+
 ## Disclaimer
 
+**IT IS ILLEGAL TO ACCESS A COMPUTER SYSTEM YOU HAVE NOT SOUGHT OUT PRIOR AUTHORIZATION TO DO SO, THIS IS A FEDERAL CRIME.**
 The developer is not responsible for any harm caused from the usage of this tool, please exercise caution and understand you may be breaking the law when using this tool.
