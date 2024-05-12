@@ -4,6 +4,8 @@ SSH, or as some others may know it, OpenSSH, is a secure shell daemon that does 
 
 PyForcer is an secure shell (SSH) brute forcing tool that is focused on speed and validity. While some methods are rudimentry such as detecting the output of pre-selected commands that bare universal resemblence. At this time there is no way to distinguish from honeypots and real targets (soon tm). Please read further below on usage specifications and known issues. This repository is now public and might receive future updates, however it's not high on my priority list at this time. Please be responsible and enjoy.
 
+As always, if you find any bugs, feel free to submit an issue, pull requests are also welcome. 
+
 ## Dependencies
 
 - Python 3.0
@@ -29,7 +31,9 @@ The arguments are as follows:
 - --threads: - The amount of threads you wish to specify to run concurrently. (
 - --debug: - Enable the script's various debugging features
 
-## 
+## Known Issues
+- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time.
+- Threading might be iffy but it does work.
 
 ## Disclaimer
 
