@@ -32,7 +32,7 @@ The arguments are as follows:
 - --debug: - Enable the script's various debugging features
 
 ## Known Issues
-- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time. (16 Theoretical max but I've seen worse)
+- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time. (16GB RAM Theoretical max but I've seen worse & crashed systems.)
 - You might run into duplicate IP addresses if you are not careful about how you label your CIDRs, try not to overlap ranges, there is no sanity checking for this.
 
 ## Disclaimer
