@@ -2,7 +2,7 @@
 
 SSH, or as some others may know it, OpenSSH, is a secure shell daemon that does exactly what the name suggests, it provides you a secure shell to your machine over the internet. While OpenSSH has demonstrated inherit flaws with it's underlying code in the past; What continues to remain the bane of existence for blue teaming? Brute forcing. I was pretty unsatisified with what I saw on GitHub for brute forcing, so I decided to tackle this project myself as if I were a red teamer, this is my creation:
 
-PyForcer is an secure shell (SSH) brute forcing tool that is focused on speed and validity. While some methods are rudimentry such as detecting the output of pre-selected commands that bare universal resemblence. At this time there is no way to distinguish from honeypots and real targets (soon tm). Please read further below on usage specifications and known issues. This repository is now public and might receive future updates, however it's not high on my priority list at this time. Please be responsible and enjoy.
+PyForcer is an secure shell (SSH) brute forcing tool that is focused on speed and validity. Keeping those things in mind, I've also decided to add a feature I've not seen other bruteforcers have. The ability to use private keys alongside user:pass combinations. This greatly increases chances of target surface depending on the situation. While some methods employed by other bruteforcers are impelemented rudimentary, such as detecting the output of pre-selected commands that bare universal resemblence across target systems. At this time there is no way to distinguish from honeypots and real targets (soon tm). Please read further below on usage specifications and known issues. This repository is now public and might receive future updates, however it's not high on my priority list at this time. Please be responsible and enjoy.
 
 As always, if you find any bugs, feel free to submit an issue, pull requests are also welcome. 
 
@@ -26,7 +26,6 @@ The arguments are as follows:
 - [output_file] - The name of the file to which the results will be written.
 - [creds] [user:pass:keyfile(optional)] <credentials_file> - The name of the file containing the login credentials to check. It should have one set of credentials per line, in the format username:password:keyfile, the keyfile is optional. If this option is not specified, the script will look for a file named credentials.txt in the current directory.
 - --interface: <interface-name> - Optional, specifies the network interface to use, defaults to eth0.
-- --keyfile: <Path to RSA/DSA/ECDSA keyfile> - Optional, specify a key file to use with the username combinations.
 - --cmd: Command to run after successful login (default: uname -a) 
 - --threads: - The amount of threads you wish to specify to run concurrently. (default: 32)
 - --debug: - Enable the script's various debugging features
