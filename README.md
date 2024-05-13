@@ -22,18 +22,18 @@ The script is executed from the command line, with the following syntax:
 
 The arguments are as follows:
 
-- [ip|file|cidr] - Either a single IP address, IP CIDR range, or a list of IPs to check
+- [input] [IP:ip/cidr:port|IP:ip:port|FILE:<filename> <syntax:ip:port>|FILE:<filename> <syntax:ip/cidr:port>|] - Various data interpretation modes.
 - [output_file] - The name of the file to which the results will be written.
-- --creds: <credentials_file> - The name of the file containing the login credentials to check. The file should have one set of credentials per line, in the format username:password. If this option is not specified, the script will look for a file named credentials.txt in the current directory.
-- --port: <Port> - The port in which you wish to attempt SSH credential bruteforcing from
+- [creds] [user:pass:keyfile(optional)] <credentials_file> - The name of the file containing the login credentials to check. It should have one set of credentials per line, in the format username:password:keyfile, the keyfile is optional. If this option is not specified, the script will look for a file named credentials.txt in the current directory.
+- --interface: <interface-name> - Optional, specifies the network interface to use, defaults to eth0.
 - --keyfile: <Path to RSA/DSA/ECDSA keyfile> - Optional, specify a key file to use with the username combinations.
 - --cmd: Command to run after successful login (default: uname -a) 
-- --threads: - The amount of threads you wish to specify to run concurrently. (
+- --threads: - The amount of threads you wish to specify to run concurrently. (default: 32)
 - --debug: - Enable the script's various debugging features
 
 ## Known Issues
-- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time.
-- Threading might be iffy but it does work.
+- Scanning large ranges of IP space might consume most, if not all system memory due to the way IP address caching is done at this time. (16 Theoretical max but I've seen worse)
+- You might run into duplicate IP addresses if you are not careful about how you label your CIDRs, try not to overlap ranges, there is no sanity checking for this.
 
 ## Disclaimer
 
