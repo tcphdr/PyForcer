@@ -21,7 +21,7 @@ class Credential:
     password: str
     keyfile: Optional[str] = None
 
-@dataclass(frozen=True, eq=True)  # Make the dataclass hashable
+@dataclass(frozen=True, eq=True)
 class Target:
     ip: str
     port: int
@@ -89,8 +89,7 @@ class PyForcer:
         self.timeout = 10
         self.debug = debug
         self.stop_event = threading.Event()
-        
-        # Setup logging
+
         if debug:
             logging.basicConfig(
                 level=logging.DEBUG,
@@ -140,31 +139,27 @@ class PyForcer:
     def parse_input_data(self, input_data: str) -> Tuple[Set[Target], int, int]:
         targets = set()
         num_ranges = 0
-        total_ip_addresses = 0  # Corrected variable name
+        total_ip_addresses = 0
 
         try:
-            # Handle FILE: prefix
             if input_data.startswith("FILE:"):
                 file_path = input_data[len("FILE:"):]
                 with open(file_path, 'r') as file:
                     for line in file:
                         line = line.strip()
-                        if line:  # Skip empty lines
+                        if line:
                             new_targets = self._parse_target_line(line)
-                            if '/' in line:  # CIDR notation
+                            if '/' in line:
                                 num_ranges += 1
                             targets.update(new_targets)
                             
-            # Handle IP: prefix or direct input
             else:
-                # Remove IP: prefix if present
                 data = input_data[len("IP:"):] if input_data.startswith("IP:") else input_data
                 new_targets = self._parse_target_line(data)
-                if '/' in data:  # CIDR notation
+                if '/' in data:
                     num_ranges += 1
                 targets.update(new_targets)
 
-            # Count total IP addresses
             total_ip_addresses = len(targets)
 
         except Exception as e:
@@ -181,19 +176,18 @@ class PyForcer:
             return targets
 
         try:
-            if '/' in line:  # CIDR notation
+            if '/' in line:
                 cidr, port = line.split(':')
                 network = ipaddress.ip_network(cidr, strict=False)
                 for ip in network:
                     targets.add(Target(str(ip), int(port)))
-            else:  # Single IP
+            else:
                 if ':' not in line:
                     self.logger.error(f"Invalid format - missing port in line: {line}")
                     return targets
                 ip, port = line.split(':')
                 try:
                     port = int(port)
-                    # Validate IP address format
                     ipaddress.ip_address(ip)
                     targets.add(Target(ip, port))
                 except ValueError as e:
@@ -242,7 +236,6 @@ class PyForcer:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.bind((interface, 0))
 
-                # Try password authentication
                 if credential.password:
                     try:
                         ssh_client.connect(
@@ -271,7 +264,6 @@ class PyForcer:
                                 f"{target.ip}:{target.port}"
                             )
 
-                # Try key authentication
                 if credential.keyfile:
                     try:
                         pkey = paramiko.RSAKey.from_private_key_file(credential.keyfile)
@@ -317,7 +309,6 @@ class PyForcer:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         try:
-            # Read credentials
             if not os.path.isfile(args.creds):
                 self.safe_print("ERROR: specified credentials file does not exist.")
                 return
